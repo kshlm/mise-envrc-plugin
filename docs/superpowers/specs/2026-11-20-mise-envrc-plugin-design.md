@@ -164,7 +164,8 @@ envrc = "<abs path>" | nil }`.
 
 `cmd.exec("pwd -P")` (output trimmed with `strings.trim_space`). The physical path is used
 because direnv's `os.Getwd()` also resolves symlinks. `ctx.config_root` is deliberately
-**not** used: for a global directive it is the user's config directory, not the project.
+**not** used: for a directive declared in `~/.config/mise/config.toml`, mise reports it as
+the user's home directory (verified locally), not the project.
 
 ### 3. Discover the rc file
 
