@@ -1,3 +1,11 @@
+local loader = require("loader")
+
 function PLUGIN:MiseEnv(ctx)
-    return { env = { { key = "SMOKE_OK", value = "yes" } }, cacheable = false }
+    local result = loader.load(ctx, false)
+    return {
+        env = result.env or {},
+        cacheable = false,
+        watch_files = result.watch_files or {},
+        redact = false,
+    }
 end

@@ -1,4 +1,6 @@
-local util = require("util")
+local loader = require("loader")
+
 function PLUGIN:MisePath(ctx)
-    return { util.join(os.getenv("PWD") or "", "bin") }
+    local result = loader.load_cached(ctx)
+    return result.paths or {}
 end
