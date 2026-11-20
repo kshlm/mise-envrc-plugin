@@ -8,6 +8,8 @@ mise is deprecating its direnv integration (`use mise`, removal in mise
 2027.10.4) and recommends migrating to `mise.toml`. This plugin lets you drop
 direnv's shell hook while still loading those `.envrc` files.
 
+> **Note:** This project was generated with the help of AI.
+
 ## Requirements
 
 - mise with environment-plugin hooks (`MiseEnv` / `MisePath`); verified on
