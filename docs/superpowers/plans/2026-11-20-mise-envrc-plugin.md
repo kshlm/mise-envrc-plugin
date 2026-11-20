@@ -921,9 +921,11 @@ local result = util.map_diff({
 }, "/old:/base", function(v) return v == stubs.NULL end,
     { env = {}, paths = {}, warnings = {} })
 eq(#result.env, 1, "env count")
-eq(#result.warnings, 2, "unset + PATH warnings")
+eq(#result.warnings, 1, "one combined warning")
+if not result.warnings[1]:find("unset GONE", 1, true) then error("missing unset detail") end
+if not result.warnings[1]:find("PATH change", 1, true) then error("missing PATH detail") end
 loader.emit(result)
-eq(#emitted, 2, "emit count")
+eq(#emitted, 1, "emit count")
 
 -- guard: MISE_ENVRC_PLUGIN=1 must short-circuit without running direnv
 local real_getenv = os.getenv
