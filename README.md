@@ -33,8 +33,7 @@ _.envrc = { }
 ```
 
 Then remove direnv's shell hook from your shell startup, and remove the deprecated
-`use mise` line from `~/.config/direnv/direnvrc` and
-`~/.config/direnv/lib/use_mise.sh`.
+`use mise` line from your `.envrc` files.
 
 ## Trust
 
