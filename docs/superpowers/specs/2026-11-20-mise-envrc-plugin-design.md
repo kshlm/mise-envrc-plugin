@@ -3,6 +3,10 @@
 Status: approved design, pending spec review
 Date: 2026-11-20
 
+Notation: in snippets, `<...>` denotes a value substituted at runtime. Every such value is
+either computed by the algorithm below or supplied by the user as documented; no
+substitution is left undefined.
+
 ## Problem
 
 mise deprecates its direnv integration (`use mise` / `mise direnv activate`, removal in
@@ -19,7 +23,8 @@ to any third-party repository, no `direnv allow` step.
 ## Non-goals
 
 - Replacing mise.toml. Projects that have any mise config are skipped outright.
-- Replacing direnv's shell hook, `direnv allow`, or direnv's watch/reload machinery.
+- Providing direnv's shell-hook semantics: automatic reload on `watch_file`,
+  prompt-based approval, and shell function exports.
 - Supporting Windows. `.envrc` execution requires POSIX bash.
 - Supporting `.envrc` constructs mise cannot express (see "Env diff mapping").
 - Installing tools. This is an environment plugin; it installs nothing.
@@ -27,7 +32,8 @@ to any third-party repository, no `direnv allow` step.
 ## Prerequisites
 
 - mise with `MiseEnv` / `MisePath` hook support (verified against local mise 2026.10.17).
-- direnv >= 2.32 for `direnv export json` (verified against local direnv 2.38.2).
+- direnv >= 2.34.0, when `direnv export` became a documented (non-private)
+  command; its `json` target is verified against local direnv 2.38.2.
 - bash, available to direnv's stdlib.
 - `mise activate` in the shell; the `direnv hook` line must be removed from shell startup.
 
@@ -47,9 +53,10 @@ Verified facts this design relies on:
    `direnv.toml` makes an otherwise-unapproved file `Allowed` without any allow record.
    Verified locally: with a generated config, the `.envrc` loads and direnv's allow DB is
    untouched.
-6. `mise trust <path>` records trust for the **directory** as a symlink in
-   `$MISE_STATE_DIR/trusted-configs`; `mise trust --ignore` adds the same shape of record
-   in `$MISE_STATE_DIR/ignored-configs`; `mise trust --untrust` removes them.
+6. In normal mode, `mise trust <path>` records trust for the **directory** as a symlink
+   in `$MISE_STATE_DIR/trusted-configs`; in paranoid mode it records the file path plus a
+   content hash sidecar. `mise trust --ignore` adds the same shape of record in
+   `$MISE_STATE_DIR/ignored-configs`; `mise trust --untrust` removes them.
    `mise trust --show` is not usable here: in a directory with no mise config it reports
    "No trusted config files found" even after trust was granted.
 7. `mise --no-env settings --all --json` returns, among other settings,
@@ -64,12 +71,15 @@ Verified facts this design relies on:
 
 ```toml
 # ~/.config/mise/config.toml
-[plugins]
-envrc = "https://github.com/<owner>/mise-envrc-plugin"
-
 [env]
 _.envrc = { }
 ```
+
+Install the plugin with `mise plugins install envrc <repository-url>` (the URL of the
+published repo), or with `mise plugins link envrc <checkout-path>` for a local checkout.
+A `[plugins]` entry in the global config is optional; when used, its value is that same
+repository URL. The directive must be in the global config so it applies to repositories
+the user does not own.
 
 For development: `mise plugins link envrc ./mise-envrc-plugin`.
 
@@ -82,7 +92,8 @@ under `[settings] trusted_config_paths`). Revoking is `mise trust --untrust <pro
 
 The README instructs the user to remove `use mise` from
 `~/.config/direnv/direnvrc` and `~/.config/direnv/lib/use_mise.sh` as part of the
-migration. The plugin still guards against it (see "Recursion").
+migration. The plugin still guards against it (see Detailed algorithm steps 1 and 6,
+and Security considerations).
 
 ## Architecture
 
@@ -119,9 +130,19 @@ tests/e2e.sh
 docs/superpowers/specs/2026-11-20-mise-envrc-plugin-design.md
 ```
 
-`metadata.lua` declares `PLUGIN = { name = "envrc", version = "0.1.0", description = ...,
-homepage = ..., license = "MIT" }`. The installed plugin name and the directive suffix are
-both `envrc` (mise resolves plugin directory names in kebab case).
+`metadata.lua` declares exactly:
+
+```lua
+PLUGIN = {
+    name = "envrc",
+    version = "0.1.0",
+    description = "Load .envrc files for projects that have no mise config",
+    license = "MIT",
+}
+```
+
+`homepage` is omitted until the repository is published. The installed plugin name and
+the directive suffix are both `envrc` (mise resolves plugin directory names in kebab case).
 
 ## Detailed algorithm
 
@@ -191,8 +212,13 @@ Precedence is deliberately **deny-wins** (stricter than mise's normal mode):
 1. If `project_dir` matches any `ignored_config_paths` entry or any `ignored-configs`
    target -> never load.
 2. If `paranoid` is true -> require an exact trust record whose target equals `envrc`
-   (the file path). Directory/prefix trust is not sufficient, matching mise's per-file,
-   content-bound trust model.
+   (the file path), **and** verify that the sibling `<record-name>.hash` file contains the
+   SHA-256 hex digest of the current `.envrc` contents. In paranoid mode mise stores one
+   symlink to the file plus a 64-byte `<record-name>.hash` sidecar; the digest is of the
+   file contents alone (verified locally). The plugin computes the digest with
+   `sha256sum` on Linux or `shasum -a 256` on macOS through `cmd.exec`. A missing sidecar
+   or a digest mismatch means "not trusted". Directory/prefix trust is not sufficient in
+   this mode, matching mise's per-file, content-bound trust model.
 3. Otherwise, load if `project_dir` matches a `trusted_config_paths` prefix, a
    `trusted-configs` target, or an exact `envrc` trust record.
 
@@ -207,7 +233,8 @@ Root: `RUNTIME.cacheDirPath/direnv/<hex>` where `<hex>` is an FNV-1a hash of the
 return an empty result; the plugin does not fall back to a world-writable directory.
 
 The directory contains a `version` file with content `1`. If the version is missing or
-different, the directory is removed and rebuilt. Contents:
+different, the directory is removed with a shell-quoted `rm -rf '<gen>'` and rebuilt with
+`mkdir -p '<gen>/lib'`. Contents:
 
 - `direnv.toml`:
   ```toml
@@ -219,11 +246,14 @@ different, the directory is removed and rebuilt. Contents:
   log_format = ""
   ```
   Additionally, best-effort copies of scalar keys from the user's real
-  `$DIRENV_CONFIG/direnv.toml` (or `config.toml`) `[global]` table are appended, with
-  `log_format` and `hide_env_diff` excluded. Reading/parsing failures are caught with
-  `pcall` and simply leave the defaults in place. User `[whitelist]` entries and
-  `load_dotenv` / `strict_env` are **not** inherited; the plugin's `dotenv` option covers
-  the discovery case, and this is documented in the README.
+  `$DIRENV_CONFIG/direnv.toml` (or `config.toml`) `[global]` table (and its legacy
+  top-level form) are appended **inside the `[global]` table**, with `log_format` and
+  `hide_env_diff` excluded because the generated values take precedence. Only
+  single-line `key = value` pairs are copied; tables, arrays and multi-line values are
+  skipped. Reading/parsing failures are caught with `pcall` and simply leave the defaults
+  in place. User `[whitelist]` entries and `load_dotenv` / `strict_env` are **not**
+  inherited; the plugin's `dotenv` option covers the discovery case, and this is
+  documented in the README.
 - `lib/`: a symlink farm of every `*.sh` in the user's real
   `$DIRENV_CONFIG/lib/`. Files whose content contains `mise direnv` are skipped: those
   are the deprecated `use mise` shims (e.g. `use_mise.sh`, `hm-mise.sh`). Everything
@@ -241,8 +271,11 @@ unavailable in mise's Lua sandbox, the fallback is `cmd.exec` with a shell-quote
 ### 7. Run direnv
 
 ```
-<direnv_bin> export json 2> '<gen>/stderr'
+'<direnv_bin>' export json 2> '<gen>/stderr'
 ```
+
+Both substitutions are single-quote escaped; `<gen>` is the generated config directory
+and `<direnv_bin>` is the configured binary path.
 
 `cmd.exec` options:
 
@@ -343,7 +376,8 @@ an empty options table and logs a debug note (the README documents only the tabl
 - Mise's trust store is the only approval mechanism. The plugin never calls
   `direnv allow`, never auto-trusts a new `.envrc`, and never writes to direnv's allow DB.
 - Deny-wins precedence; `ignored_config_paths` / `ignored-configs` always override trust.
-- Paranoid mode requires a file-level trust record.
+- Paranoid mode requires a file-level trust record whose `.hash` sidecar matches the
+  current `.envrc` contents, so editing an approved file revokes its approval.
 - `MISE_SAFE=1` disables loading.
 - `MISE_ENVRC_PLUGIN=1` guard plus the `use_mise` no-op prevents recursion through the
   deprecated direnv integration.
