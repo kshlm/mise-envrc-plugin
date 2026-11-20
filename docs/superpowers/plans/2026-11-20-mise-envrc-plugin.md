@@ -1301,7 +1301,7 @@ mise trust "$F" >/dev/null 2>&1
 check "safe mode" "" "$(cd "$F" && MISE_SAFE=1 mise env --json 2>/dev/null | jq -r '.SAFE_VAR // ""')"
 
 # case 9b: missing direnv warns without breaking mise env
-check "baseline with explicit config dir" "yes" \
+check "baseline with explicit config dir" "alpha" \
   "$(cd "$A" && MISE_CONFIG_DIR="$S/config" mise env --json 2>/dev/null | jq -r '.PROJECT_NAME // ""')"
 G="$S/nodirenv"; mkdir -p "$G/config" "$G"
 printf '[env]\n_.envrc = { direnv_bin = "%s/does-not-exist" }\n' "$G" > "$G/config/config.toml"
@@ -1319,9 +1319,9 @@ leaks=$(cd "$A" && mise env --json | jq -r 'keys[]' |
 check "no internal vars" "0" "$leaks"
 
 # case 11: direnv's allow DB is unchanged
-allows_before=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l)
+allows_before=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || true)
 (cd "$A" && mise env >/dev/null 2>&1)
-allows_after=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l)
+allows_after=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || true)
 check "direnv allow DB untouched" "$allows_before" "$allows_after"
 ```
 
