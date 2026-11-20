@@ -29,9 +29,16 @@ function M.basename(path)
     return path:match("[^/]+$") or path
 end
 
-function M.join(a, b)
-    if a:sub(-1) == "/" then return a .. b end
-    return a .. "/" .. b
+function M.join(...)
+    local n = select("#", ...)
+    local out = select(1, ...) or ""
+    for i = 2, n do
+        local b = select(i, ...)
+        if b and b ~= "" then
+            if out:sub(-1) == "/" then out = out .. b else out = out .. "/" .. b end
+        end
+    end
+    return out
 end
 
 function M.ancestors(start, stop)

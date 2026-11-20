@@ -16,6 +16,7 @@ eq(util.dir_of("/a/b/.envrc"), "/a/b", "dir_of")
 eq(util.dir_of("/a"), "/", "dir_of root parent")
 eq(util.basename("/a/b/.envrc"), ".envrc", "basename")
 eq(util.join("/a", ".envrc"), "/a/.envrc", "join")
+eq(util.join("/a", "lib", "*.sh"), "/a/lib/*.sh", "join three segments")
 eq(util.path_prefix("/a/b", "/a/b"), true, "prefix exact")
 eq(util.path_prefix("/a/b", "/a/bc"), false, "prefix boundary")
 eq(util.path_prefix("/a/b", "/a/b/c"), true, "prefix child")
@@ -26,7 +27,7 @@ if util.hash("/a/b") == util.hash("/a/c") then error("hash collision") end
 
 local dirs = util.ancestors("/a/b/c", "/a")
 eq(table.concat(dirs, ","), "/a/b/c,/a/b,/a", "ancestors")
-eq(util.join(util.split("a:b::c", ":")[1], ""), "a/", "split")
+eq(table.concat(util.split("a:b::c", ":"), ","), "a,b,c", "split")
 
 local found = util.find_up("/a/b/c", { ".envrc" }, function(p)
     return p == "/a/.envrc" and { is_file = true } or nil

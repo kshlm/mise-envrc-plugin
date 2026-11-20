@@ -217,6 +217,7 @@ eq(util.dir_of("/a/b/.envrc"), "/a/b", "dir_of")
 eq(util.dir_of("/a"), "/", "dir_of root parent")
 eq(util.basename("/a/b/.envrc"), ".envrc", "basename")
 eq(util.join("/a", ".envrc"), "/a/.envrc", "join")
+eq(util.join("/a", "lib", "*.sh"), "/a/lib/*.sh", "join three segments")
 eq(util.path_prefix("/a/b", "/a/b"), true, "prefix exact")
 eq(util.path_prefix("/a/b", "/a/bc"), false, "prefix boundary")
 eq(util.path_prefix("/a/b", "/a/b/c"), true, "prefix child")
@@ -227,7 +228,7 @@ if util.hash("/a/b") == util.hash("/a/c") then error("hash collision") end
 
 local dirs = util.ancestors("/a/b/c", "/a")
 eq(table.concat(dirs, ","), "/a/b/c,/a/b,/a", "ancestors")
-eq(util.join(util.split("a:b::c", ":")[1], ""), "a/", "split")
+eq(table.concat(util.split("a:b::c", ":"), ","), "a,b,c", "split")
 
 local found = util.find_up("/a/b/c", { ".envrc" }, function(p)
     return p == "/a/.envrc" and { is_file = true } or nil
@@ -310,9 +311,16 @@ function M.basename(path)
     return path:match("[^/]+$") or path
 end
 
-function M.join(a, b)
-    if a:sub(-1) == "/" then return a .. b end
-    return a .. "/" .. b
+function M.join(...)
+    local n = select("#", ...)
+    local out = select(1, ...) or ""
+    for i = 2, n do
+        local b = select(i, ...)
+        if b and b ~= "" then
+            if out:sub(-1) == "/" then out = out .. b else out = out .. "/" .. b end
+        end
+    end
+    return out
 end
 
 function M.ancestors(start, stop)
@@ -1269,7 +1277,12 @@ git commit -m "feat: wire MiseEnv/MisePath hooks and add core end-to-end tests"
 
 - [ ] **Step 1: Add failing edge-case tests**
 
-Append to `tests/e2e.sh` before the final `[ "$fail" -eq 0 ]`:
+Append cases 7–12 below to `tests/e2e.sh` before the final `[ "$fail" -eq 0 ]`.
+Case 12 is a regression test for the three-argument `util.join` call in
+`lib/direnv.lua`: it adds two files to the fake `direnv/lib`, clears the generated
+config cache, and asserts the harmless one is symlinked while a file containing
+`mise direnv activate` is excluded. Its exact code is in the committed
+`tests/e2e.sh`.
 
 ```bash
 # case 7: unset and PATH append are warned about, other vars still apply

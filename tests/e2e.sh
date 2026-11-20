@@ -112,5 +112,17 @@ allows_before=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || t
 allows_after=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || true)
 check "direnv allow DB untouched" "$allows_before" "$allows_after"
 
+# case 12: generated direnv config keeps user libs but drops `use mise` shims
+printf 'harmless_helper() { :; }\n' > "$S/direnv/lib/harmless.sh"
+printf 'eval "$(mise direnv activate)"\n' > "$S/direnv/lib/mise_shim.sh"
+rm -rf "$S/cache/plugins/envrc/direnv"
+H="$S/projH"; mkdir -p "$H"
+printf 'export LIB_FARM_OK=yes\n' > "$H/.envrc"
+mise trust "$H" >/dev/null 2>&1
+check "lib farm project" "yes" "$(envval "$H" LIB_FARM_OK)"
+genlib=$(find "$S/cache/plugins/envrc/direnv" -type d -name lib | head -1)
+check "harmless lib linked" "1" "$(find "$genlib" -name harmless.sh | wc -l)"
+check "mise shim excluded" "0" "$(find "$genlib" -name mise_shim.sh | wc -l)"
+
 [ "$fail" -eq 0 ] || exit 1
 echo "e2e core: ok"
