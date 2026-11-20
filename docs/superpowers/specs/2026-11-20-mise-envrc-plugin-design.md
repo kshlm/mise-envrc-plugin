@@ -31,13 +31,13 @@ to any third-party repository, no `direnv allow` step.
 
 ## Prerequisites
 
-- mise with `MiseEnv` / `MisePath` hook support (verified against local mise 2026.10.17).
+- mise with `MiseEnv` / `MisePath` hook support.
 - direnv >= 2.34.0, when `direnv export` became a documented (non-private)
-  command; its `json` target is verified against local direnv 2.38.2.
+  command with a `json` target.
 - bash, available to direnv's stdlib.
 - `mise activate` in the shell; the `direnv hook` line must be removed from shell startup.
 
-Verified facts this design relies on:
+Facts this design relies on:
 
 1. `direnv help export` lists `json` as a supported SHELL target.
    `internal/cmd/cmd_export.go` renders `currentEnv.Diff(newEnv).ToShell(shell)`.
@@ -51,7 +51,7 @@ Verified facts this design relies on:
 5. `direnv status --json` reports `foundRC.allowed` as `0 = Allowed`, `1 = NotAllowed`,
    `2 = Denied` (`internal/cmd/rc.go`). `[whitelist] exact = ["<abs .envrc>"]` in
    `direnv.toml` makes an otherwise-unapproved file `Allowed` without any allow record.
-   Verified locally: with a generated config, the `.envrc` loads and direnv's allow DB is
+   With a generated config, the `.envrc` loads and direnv's allow DB is
    untouched.
 6. In normal mode, `mise trust <path>` records trust for the **directory** as a symlink
    in `$MISE_STATE_DIR/trusted-configs`; in paranoid mode it records the file path plus a
@@ -165,7 +165,7 @@ envrc = "<abs path>" | nil }`.
 `cmd.exec("pwd -P")` (output trimmed with `strings.trim_space`). The physical path is used
 because direnv's `os.Getwd()` also resolves symlinks. `ctx.config_root` is deliberately
 **not** used: for a directive declared in `~/.config/mise/config.toml`, mise reports it as
-the user's home directory (verified locally), not the project.
+the user's home directory, not the project.
 
 ### 3. Discover the rc file
 
@@ -216,7 +216,7 @@ Precedence is deliberately **deny-wins** (stricter than mise's normal mode):
    (the file path), **and** verify that the sibling `<record-name>.hash` file contains the
    SHA-256 hex digest of the current `.envrc` contents. In paranoid mode mise stores one
    symlink to the file plus a 64-byte `<record-name>.hash` sidecar; the digest is of the
-   file contents alone (verified locally). The plugin computes the digest with
+   file contents alone. The plugin computes the digest with
    `sha256sum` on Linux or `shasum -a 256` on macOS through `cmd.exec`. A missing sidecar
    or a digest mismatch means "not trusted". Directory/prefix trust is not sufficient in
    this mode, matching mise's per-file, content-bound trust model.
@@ -257,10 +257,9 @@ different, the directory is removed with a shell-quoted `rm -rf '<gen>'` and reb
   documented in the README.
 - `lib/`: a symlink farm of every `*.sh` in the user's real
   `$DIRENV_CONFIG/lib/`. Files whose content contains `mise direnv` are skipped: those
-  are the deprecated `use mise` shims (e.g. `use_mise.sh`, `hm-mise.sh`). Everything
-  else, notably nix-direnv's `hm-nix-direnv.sh`, is preserved so `use nix` / `use flake`
-  keep working. Verified locally that omitting the mise shim removes the deprecation
-  warning from the direnv subprocess.
+  are the deprecated `use mise` shims (e.g. `use_mise.sh`). Everything else is preserved
+  so custom direnv extensions keep working. Omitting the mise shim also removes the
+  deprecation warning from the direnv subprocess.
 - `direnvrc`: first line `use_mise() { :; }`, then `source '<real direnvrc>'` for
   `$DIRENV_CONFIG/direnvrc` and/or `$HOME/.direnvrc` when present. Custom helpers in the
   user's direnvrc therefore still work, while a stray `use mise` call becomes a no-op.

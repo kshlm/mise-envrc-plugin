@@ -12,9 +12,8 @@ direnv's shell hook while still loading those `.envrc` files.
 
 ## Requirements
 
-- mise with environment-plugin hooks (`MiseEnv` / `MisePath`); verified on
-  mise 2026.10.17.
-- direnv >= 2.34.0 (`direnv export json`); verified on 2.38.2.
+- mise with environment-plugin hooks (`MiseEnv` / `MisePath`).
+- direnv >= 2.34.0 (`direnv export json`).
 - bash, Linux or macOS. Windows is not supported.
 
 ## Install
@@ -33,9 +32,9 @@ Enable it once in your **global** config:
 _.envrc = { }
 ```
 
-Then remove direnv's shell hook (`eval "$(direnv hook zsh)"`) from your shell
-startup, and remove the deprecated `use mise` line from
-`~/.config/direnv/direnvrc` and `~/.config/direnv/lib/use_mise.sh`.
+Then remove direnv's shell hook from your shell startup, and remove the deprecated
+`use mise` line from `~/.config/direnv/direnvrc` and
+`~/.config/direnv/lib/use_mise.sh`.
 
 ## Trust
 
@@ -85,8 +84,8 @@ _.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = f
   `.config/mise.toml`, `.tool-versions`, …), the `.envrc` is skipped — mise
   config wins.
 - The plugin builds a private direnv config that whitelists exactly that one
-  approved `.envrc`, preserving your `direnvrc` helpers and `lib/*.sh` (including
-  nix-direnv) while neutralising `use mise`. direnv's own allow database is not
+  approved `.envrc`, preserving your `direnvrc` helpers and `lib/*.sh` extensions
+  while neutralising `use mise`. direnv's own allow database is not
   touched.
 - Variables are returned from `MiseEnv`; directories prepended by `PATH_add`
   are returned from `MisePath`. mise stays in control of tool paths.
