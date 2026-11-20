@@ -53,4 +53,15 @@ records.hashes["/work/proj/.envrc"] = "cafebabe"
 ok = mise.is_trusted("/work/proj", "/work/proj/.envrc", opts)
 eq(ok, true, "paranoid hash match")
 
+-- compat: strict RUNTIME (mise < 2026.10.17) has no osType to offer in some
+-- contexts; reading it must not raise, and the POSIX hasher is used instead.
+_G.RUNTIME = setmetatable({}, {
+    __index = function(_, k)
+        error("attempt to get an unknown field '" .. tostring(k) .. "'", 2)
+    end,
+})
+ok, reason = mise.is_trusted("/work/proj", "/work/proj/.envrc", opts)
+eq(ok, true, "paranoid hash match without RUNTIME.osType")
+_G.RUNTIME = { osType = "linux", cacheDirPath = "/tmp/mise-envrc-test-cache" }
+
 print("test_trust: ok")

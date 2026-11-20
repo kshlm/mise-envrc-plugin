@@ -1,5 +1,15 @@
 local M = {}
 
+-- mise exposes RUNTIME as a strict userdata: reading a field it does not
+-- register raises instead of returning nil (e.g. cacheDirPath was only added
+-- in mise 2026.10.17). Route all RUNTIME field reads through here.
+function M.runtime_field(name)
+    if not RUNTIME then return nil end
+    local ok, v = pcall(function() return RUNTIME[name] end)
+    if not ok then return nil end
+    return v
+end
+
 function M.sh_quote(s)
     local q = string.char(39)
     local b = string.char(92)

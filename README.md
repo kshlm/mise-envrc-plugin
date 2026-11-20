@@ -12,7 +12,10 @@ direnv's shell hook while still loading those `.envrc` files.
 
 ## Requirements
 
-- mise with environment-plugin hooks (`MiseEnv` / `MisePath`).
+- mise with environment-plugin hooks (`MiseEnv` / `MisePath`). mise >= 2026.10.17
+  is recommended: older releases lack `RUNTIME.cacheDirPath`, and the plugin then
+  falls back to a user-owned cache directory (`$MISE_CACHE_DIR/envrc-plugin`, or
+  `~/.cache/mise/envrc-plugin` following `XDG_CACHE_HOME`).
 - direnv >= 2.34.0 (`direnv export json`).
 - bash, Linux or macOS. Windows is not supported.
 
@@ -103,6 +106,9 @@ _.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = f
   you override it if your setup differs.
 - Running direnv and mise shell hooks together remains unsupported by mise. Do
   not enable both.
+- On mise < 2026.10.17 the fallback cache directory is not covered by
+  `mise cache clear`; stale entries only waste a little disk and are
+  content-keyed, so they never change results.
 
 ## Development
 

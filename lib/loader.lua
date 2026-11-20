@@ -38,8 +38,35 @@ local function current_cwd()
     return util.trim(out)
 end
 
+-- Resolve the plugin's cache root. Prefer mise's per-plugin cacheDirPath
+-- (mise >= 2026.10.17); on older mise fall back to a user-owned directory so
+-- the plugin still works. Returns nil when no usable directory exists.
+local function cache_root()
+    local root = util.runtime_field("cacheDirPath")
+    if not root or root == "" then
+        local base = os.getenv("MISE_CACHE_DIR")
+        if base and base ~= "" then
+            root = util.join(base, "envrc-plugin")
+        else
+            local xdg = os.getenv("XDG_CACHE_HOME")
+            if xdg and xdg ~= "" then
+                root = util.join(util.join(xdg, "mise"), "envrc-plugin")
+            else
+                local home = os.getenv("HOME")
+                if not home or home == "" then return nil end
+                root = util.join(util.join(home, ".cache/mise"), "envrc-plugin")
+            end
+        end
+    end
+    local okstat, info = pcall(file.stat, root)
+    if okstat and info and info.is_dir then return root end
+    local okmkdir = pcall(cmd.exec, "mkdir -p " .. util.sh_quote(root))
+    if not okmkdir then return nil end
+    return root
+end
+
 local function cache_path(cwd)
-    local cache = RUNTIME and RUNTIME.cacheDirPath
+    local cache = cache_root()
     if not cache or not cwd then return nil end
     return util.join(cache, "result-" .. util.hash(cwd) .. ".json")
 end
@@ -99,7 +126,7 @@ function M.load(ctx, quiet)
         return result
     end
 
-    local cache = RUNTIME and RUNTIME.cacheDirPath
+    local cache = cache_root()
     if not cache then
         warn(result, "mise-envrc: mise did not provide a plugin cache directory")
         if not quiet then M.emit(result) end

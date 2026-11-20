@@ -82,7 +82,7 @@ function M.is_trusted(project_dir, envrc, opts)
         if not expected then
             return false, "paranoid mode requires an approved .envrc"
         end
-        local tool = (RUNTIME and RUNTIME.osType == "darwin")
+        local tool = (util.runtime_field("osType") == "darwin")
             and "shasum -a 256 " or "sha256sum "
         local ok, out = pcall(cmd.exec, tool .. util.sh_quote(envrc), { timeout = 10 })
         if not ok then return false, "could not hash .envrc" end
