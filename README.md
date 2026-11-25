@@ -75,6 +75,19 @@ _.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = f
 | `state_dir` | unset | override mise's state directory for trust records |
 | `dotenv` | `false` | also discover `.env` files |
 
+`MISE_ENVRC_DIRENV_BIN` can set the binary from the environment instead. An
+explicitly provided `direnv_bin` in the current directive always wins, even when
+its value is `"direnv"`; sibling declarations and the environment are consulted
+only when the option is omitted. An absolute path therefore works even when
+`direnv` is deliberately absent from `PATH`.
+
+mise invokes an environment plugin once for every config file that declares
+`_.envrc`, and each invocation receives only that file's options. If multiple
+config files declare the directive (for example, a Home Manager config plus a
+mutable global config), the plugin resolves `direnv_bin` from the
+highest-precedence declaration that sets it and uses that binary for every
+invocation. Declaring `_.envrc` once is still the clearest configuration.
+
 `redact = true` and `tools = true` are mise directive options and work as usual.
 
 ## Behaviour

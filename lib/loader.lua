@@ -8,6 +8,9 @@ local log = require("log")
 
 local M = {}
 local GUARD = "MISE_ENVRC_PLUGIN"
+local DEFAULT_BIN = "direnv"
+local USER_BIN_ENV = "MISE_ENVRC_DIRENV_BIN"
+local PROCESS_BIN_ENV = "__MISE_ENVRC_DIRENV_BIN"
 local NULL = json.decode("null")
 local NUL = string.char(0)
 
@@ -16,9 +19,13 @@ local function empty()
 end
 
 local function options(raw)
-    local o = { direnv_bin = "direnv", timeout = 30, state_dir = nil, dotenv = false }
+    local o = { direnv_bin = DEFAULT_BIN, direnv_bin_explicit = false,
+        timeout = 30, state_dir = nil, dotenv = false }
     if type(raw) == "table" then
-        if type(raw.direnv_bin) == "string" then o.direnv_bin = raw.direnv_bin end
+        if type(raw.direnv_bin) == "string" then
+            o.direnv_bin_explicit = true
+            if raw.direnv_bin ~= "" then o.direnv_bin = raw.direnv_bin end
+        end
         if type(raw.timeout) == "number" and raw.timeout > 0 then o.timeout = raw.timeout end
         if type(raw.state_dir) == "string" then o.state_dir = raw.state_dir end
         if raw.dotenv == true then o.dotenv = true end
@@ -26,6 +33,35 @@ local function options(raw)
         log.debug("mise-envrc: directive should be a table")
     end
     return o
+end
+
+local function env_value(name)
+    local v = os.getenv(name)
+    if type(v) ~= "string" then return nil end
+    v = util.trim(v)
+    if v == "" then return nil end
+    return v
+end
+
+-- A directive without `direnv_bin` still has to see a binary configured by a
+-- sibling `_.envrc` declaration: mise invokes the hooks once per declaration
+-- and supplies only that file's options.
+local function resolve_direnv_bin(opts)
+    if opts.direnv_bin_explicit then return end
+    local override = env_value(USER_BIN_ENV)
+    if override then
+        opts.direnv_bin = override
+        return
+    end
+    local remembered = env_value(PROCESS_BIN_ENV)
+    if remembered then
+        opts.direnv_bin = remembered
+        return
+    end
+    local ok, configured = pcall(mise.direnv_bin)
+    if ok and type(configured) == "string" and configured ~= "" then
+        opts.direnv_bin = configured
+    end
 end
 
 local function warn(result, msg)
@@ -92,15 +128,6 @@ function M.load(ctx, quiet)
     if safe == "1" or safe == "true" then return result end
 
     local opts = options(ctx.options)
-    local okver = pcall(cmd.exec,
-        util.sh_quote(opts.direnv_bin) .. " version", { timeout = 5 })
-    if not okver then
-        if not quiet then
-            log.warn("mise-envrc: direnv not found; install direnv to load .envrc files")
-        end
-        return result
-    end
-
     local cwd = current_cwd()
     if not cwd then return result end
     local names = { ".envrc" }
@@ -118,6 +145,9 @@ function M.load(ctx, quiet)
         return result
     end
 
+    -- Trust comes first: an untrusted project should receive the actionable
+    -- trust warning without config lookups or direnv execution, even when
+    -- direnv is missing from PATH.
     local trusted, reason = mise.is_trusted(project_dir, envrc, opts)
     if not trusted then
         warn(result, "mise-envrc: " .. envrc .. " is not trusted by mise (" ..
@@ -125,6 +155,21 @@ function M.load(ctx, quiet)
         if not quiet then M.emit(result) end
         return result
     end
+
+    -- Check the binary only once an `.envrc` would actually be loaded. A
+    -- duplicate, optionless directive must stay silent when mise config or an
+    -- absent `.envrc` makes this invocation a no-op.
+    resolve_direnv_bin(opts)
+    local okver = pcall(cmd.exec,
+        util.sh_quote(opts.direnv_bin) .. " version", { timeout = 5 })
+    if not okver then
+        if not quiet then
+            log.warn("mise-envrc: direnv not found; install direnv, set " ..
+                "direnv_bin on the _.envrc directive, or set " .. USER_BIN_ENV)
+        end
+        return result
+    end
+    pcall(mise.remember_direnv_bin, opts.direnv_bin)
 
     local cache = cache_root()
     if not cache then
@@ -181,8 +226,15 @@ function M.load_cached(ctx)
             if okjson and type(cached) == "table" and cached.cwd == cwd
                 and cached.envrc then
                 local opts = options(ctx.options)
-                local expected = M.result_key(cwd, cached.envrc, opts,
-                    os.getenv("PATH") or "")
+                local path_env = os.getenv("PATH") or ""
+                local expected = M.result_key(cwd, cached.envrc, opts, path_env)
+                if cached.key ~= expected then
+                    -- The stored key embeds the resolved direnv binary. A
+                    -- sibling declaration may have configured it; retry with
+                    -- the effective options before recomputing.
+                    resolve_direnv_bin(opts)
+                    expected = M.result_key(cwd, cached.envrc, opts, path_env)
+                end
                 if cached.key == expected then return cached end
             end
         end

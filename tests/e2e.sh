@@ -2,6 +2,9 @@
 # tests/e2e.sh — end-to-end tests against real mise + direnv.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+MISE_BIN=$(command -v mise)
+JQ_BIN=$(command -v jq)
+REAL_DIRENV_BIN=$(command -v direnv)
 S=$(mktemp -d "${TMPDIR:-/tmp}/mise-envrc-e2e.XXXXXX")
 trap 'rm -rf "$S"' EXIT
 
@@ -112,7 +115,42 @@ allows_before=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || t
 allows_after=$(find "$S/xdg-data/direnv/allow" -type f 2>/dev/null | wc -l || true)
 check "direnv allow DB untouched" "$allows_before" "$allows_after"
 
-# case 12: generated direnv config keeps user libs but drops `use mise` shims
+# case 12: duplicate _.envrc declarations share a configured direnv_bin even
+# when direnv is deliberately absent from PATH.
+rm -f "$S/cache/plugins/envrc"/result-*.json
+printf '#!/bin/sh\nexec %q "$@"\n' "$REAL_DIRENV_BIN" > "$S/direnv-bin"
+chmod +x "$S/direnv-bin"
+NODIRENV_PATH=""
+OLDIFS=$IFS
+IFS=:
+for d in $PATH; do
+  if [ ! -x "$d/direnv" ]; then
+    NODIRENV_PATH="${NODIRENV_PATH:+$NODIRENV_PATH:}$d"
+  fi
+done
+IFS=$OLDIFS
+if PATH="$NODIRENV_PATH" command -v direnv >/dev/null 2>&1; then
+  echo "FAIL direnv still on reduced PATH" >&2; fail=1
+else echo "ok direnv absent from reduced PATH"; fi
+I="$S/dup"; mkdir -p "$I/config/conf.d" "$I/proj"
+printf '[env]\n_.envrc = { direnv_bin = "%s/direnv-bin" }\n' "$S" > "$I/config/config.toml"
+printf '[env._.envrc]\n' > "$I/config/conf.d/50-home-manager.toml"
+printf 'export DUP_OK=yes\n' > "$I/proj/.envrc"
+MISE_CONFIG_DIR="$I/config" "$MISE_BIN" trust "$I/proj" >/dev/null 2>&1
+(cd "$I/proj" && PATH="$NODIRENV_PATH" MISE_CONFIG_DIR="$I/config" \
+  MISE_VERBOSE=1 "$MISE_BIN" env --json >"$S/envI" 2>"$S/warnI")
+check "duplicate declarations load with direnv_bin" "yes" \
+  "$("$JQ_BIN" -r '.DUP_OK // ""' "$S/envI")"
+if grep -q "direnv not found" "$S/warnI"; then
+  echo "FAIL duplicate declarations warned about missing direnv" >&2; fail=1
+else echo "ok duplicate declarations do not warn"; fi
+if grep -qF "command=\"'direnv' version\"" "$S/warnI"; then
+  echo "FAIL duplicate declarations probed bare direnv" >&2; fail=1
+else echo "ok duplicate declarations use configured direnv"; fi
+handoff_leaks=$("$JQ_BIN" -r 'keys[]' "$S/envI" | grep -c '^__MISE_' || true)
+check "no process hand-off vars leak" "0" "$handoff_leaks"
+
+# case 13: generated direnv config keeps user libs but drops `use mise` shims
 printf 'harmless_helper() { :; }\n' > "$S/direnv/lib/harmless.sh"
 printf 'eval "$(mise direnv activate)"\n' > "$S/direnv/lib/mise_shim.sh"
 rm -rf "$S/cache/plugins/envrc/direnv"
