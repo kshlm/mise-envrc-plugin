@@ -162,6 +162,17 @@ eq(commands[1], "pwd -P", "mise-config skip command")
 eq(has_command("config --json"), false, "mise-config skip avoids config lookup")
 eq(has_command(" version"), false, "mise-config skip avoids direnv probe")
 
+-- force = true overrides the mise-config skip and loads anyway.
+reset({ env_bin = env_override, config = true })
+local forced = loader.load({ options = { force = true } }, false)
+eq(has_command(" version"), true, "force probes direnv despite mise config")
+eq(forced.envrc, envrc, "force loads the envrc")
+
+-- The cache key changes when force flips, so cached results don't leak across modes.
+local plain = loader.result_key(cwd, envrc, { direnv_bin = "d", timeout = 30, dotenv = false, force = false }, path_env)
+local forced_key = loader.result_key(cwd, envrc, { direnv_bin = "d", timeout = 30, dotenv = false, force = true }, path_env)
+if plain == forced_key then error("force option missing from cache key") end
+
 os.getenv = real_getenv
 mise.is_trusted = real_is_trusted
 print("test_loader_options: ok")

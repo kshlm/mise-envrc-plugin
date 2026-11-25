@@ -65,7 +65,7 @@ config directories); that is expected.
 
 ```toml
 [env]
-_.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = false }
+_.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = false, force = false }
 ```
 
 | Option | Default | Meaning |
@@ -74,6 +74,7 @@ _.envrc = { direnv_bin = "direnv", timeout = 30, state_dir = "/path", dotenv = f
 | `timeout` | `30` | seconds allowed per direnv invocation |
 | `state_dir` | unset | override mise's state directory for trust records |
 | `dotenv` | `false` | also discover `.env` files |
+| `force` | `false` | load the `.envrc` even when a mise config exists in its tree |
 
 `MISE_ENVRC_DIRENV_BIN` can set the binary from the environment instead. An
 explicitly provided `direnv_bin` in the current directive always wins, even when
@@ -97,7 +98,10 @@ invocation. Declaring `_.envrc` once is still the clearest configuration.
 - If **any** mise config exists from the current directory up to the `.envrc`
   directory (`mise.toml`, `.mise.toml`, `mise.local.toml`, `mise/conf.d/*.toml`,
   `.config/mise.toml`, `.tool-versions`, …), the `.envrc` is skipped — mise
-  config wins.
+  config wins. Set `_.envrc = { force = true }` to load it anyway.
+- `force = true` stacks on top of mise config: both the mise config and the
+  `.envrc` apply. direnv variables load first in `mise env` output ordering, so
+  mise config `[env]` values still override same-named `.envrc` variables.
 - The plugin builds a private direnv config that whitelists exactly that one
   approved `.envrc`, preserving your `direnvrc` helpers and `lib/*.sh` extensions
   while neutralising `use mise`. direnv's own allow database is not

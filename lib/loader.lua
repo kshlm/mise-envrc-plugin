@@ -20,7 +20,7 @@ end
 
 local function options(raw)
     local o = { direnv_bin = DEFAULT_BIN, direnv_bin_explicit = false,
-        timeout = 30, state_dir = nil, dotenv = false }
+        timeout = 30, state_dir = nil, dotenv = false, force = false }
     if type(raw) == "table" then
         if type(raw.direnv_bin) == "string" then
             o.direnv_bin_explicit = true
@@ -29,6 +29,7 @@ local function options(raw)
         if type(raw.timeout) == "number" and raw.timeout > 0 then o.timeout = raw.timeout end
         if type(raw.state_dir) == "string" then o.state_dir = raw.state_dir end
         if raw.dotenv == true then o.dotenv = true end
+        if raw.force == true then o.force = true end
     else
         log.debug("mise-envrc: directive should be a table")
     end
@@ -112,7 +113,7 @@ function M.result_key(cwd, envrc, opts, path_env)
     local mtime = info and tostring(info.modified) or "0"
     local o = table.concat({
         opts.direnv_bin, tostring(opts.timeout), opts.state_dir or "",
-        tostring(opts.dotenv),
+        tostring(opts.dotenv == true), tostring(opts.force == true),
     }, NUL)
     return util.hash(table.concat({ cwd, envrc, mtime, o, path_env or "" }, NUL))
 end
@@ -123,17 +124,31 @@ end
 
 function M.load(ctx, quiet)
     local result = empty()
-    if os.getenv(GUARD) == "1" then return result end
+    if os.getenv(GUARD) == "1" then
+        log.debug("mise-envrc: not loading, recursive invocation guarded by " .. GUARD)
+        return result
+    end
     local safe = os.getenv("MISE_SAFE")
-    if safe == "1" or safe == "true" then return result end
+    if safe == "1" or safe == "true" then
+        log.debug("mise-envrc: not loading, MISE_SAFE is set")
+        return result
+    end
 
     local opts = options(ctx.options)
     local cwd = current_cwd()
-    if not cwd then return result end
+    if not cwd then
+        log.debug("mise-envrc: not loading, could not determine working directory")
+        return result
+    end
     local names = { ".envrc" }
     if opts.dotenv then names[#names + 1] = ".env" end
     local envrc = util.find_up(cwd, names, function(p) return file.stat(p) end)
-    if not envrc then return result end
+    if not envrc then
+        log.debug("mise-envrc: not loading, no " .. table.concat(names, " or ") ..
+            " found in " .. cwd .. " or any parent")
+        return result
+    end
+    log.debug("mise-envrc: found " .. envrc)
 
     local project_dir = util.dir_of(envrc)
     local dirs = util.ancestors(cwd, project_dir)
@@ -141,8 +156,11 @@ function M.load(ctx, quiet)
         function(p) return file.glob(p) end,
         function(p) return file.exists(p) end)
     if has_cfg then
-        log.debug("mise-envrc: skipping, mise config found in " .. tostring(where))
-        return result
+        if not opts.force then
+            log.debug("mise-envrc: skipping, mise config found in " .. tostring(where))
+            return result
+        end
+        log.debug("mise-envrc: forcing load despite mise config in " .. tostring(where))
     end
 
     -- Trust comes first: an untrusted project should receive the actionable
@@ -160,6 +178,7 @@ function M.load(ctx, quiet)
     -- duplicate, optionless directive must stay silent when mise config or an
     -- absent `.envrc` makes this invocation a no-op.
     resolve_direnv_bin(opts)
+    log.debug("mise-envrc: using direnv binary " .. opts.direnv_bin)
     local okver = pcall(cmd.exec,
         util.sh_quote(opts.direnv_bin) .. " version", { timeout = 5 })
     if not okver then
@@ -191,6 +210,7 @@ function M.load(ctx, quiet)
         warn(result, "mise-envrc: direnv: " .. (err:match("[^\n]+") or err))
     end
     if not diff then
+        log.debug("mise-envrc: not loading, direnv produced no environment diff")
         if not quiet then M.emit(result) end
         return result
     end
@@ -212,6 +232,8 @@ function M.load(ctx, quiet)
         end
     end
     if not quiet then M.emit(result) end
+    log.debug("mise-envrc: loaded " .. #result.env .. " env vars and " ..
+        #result.paths .. " path entries from " .. envrc)
     return result
 end
 
@@ -236,9 +258,11 @@ function M.load_cached(ctx)
                     expected = M.result_key(cwd, cached.envrc, opts, path_env)
                 end
                 if cached.key == expected then return cached end
+                log.debug("mise-envrc: cache entry stale, reloading")
             end
         end
     end
+    log.debug("mise-envrc: no usable cache entry, reloading")
     return M.load(ctx, true)
 end
 
